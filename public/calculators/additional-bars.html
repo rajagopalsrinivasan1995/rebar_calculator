@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Add'l Rebar Weight Calculator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      :root {
+        --bg: #eef3f8;
+        --panel: #ffffff;
+        --panel-alt: #f7faff;
+        --primary: #0b5394;
+        --primary-dark: #093c67;
+        --primary-soft: #dfeeff;
+        --success: #1d8f5f;
+        --success-soft: #e8f7ef;
+        --warning: #d98b2b;
+        --danger: #c93e3e;
+        --border: #d9e3ee;
+        --text: #1f2a37;
+        --muted: #67758a;
+        --shadow: 0 10px 24px rgba(16, 42, 72, 0.08);
+      }
+
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: Arial, Helvetica, sans-serif;
+        background: linear-gradient(180deg, #f4f7fb 0%, #edf2f7 100%);
+        color: var(--text);
+        line-height: 1.45;
+      }
+
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      .card {
+        background: var(--panel);
+        padding: 22px 24px;
+        margin-bottom: 18px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+      }
+
+      h1 {
+        margin: 0;
+        color: var(--primary);
+        font-size: 2rem;
+        letter-spacing: -0.03em;
+        text-align: center;
+      }
+
+      h3 {
+        margin: 0 0 12px 0;
+        color: var(--primary-dark);
+        font-size: 1.2rem;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: minmax(240px, 1.7fr) repeat(3, minmax(130px, auto));
+        align-items: center;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      input[type="file"] {
+        padding: 11px 12px;
+        width: 100%;
+        background: var(--panel-alt);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        color: var(--text);
+      }
+
+      .file-picker {
+        min-width: 0;
+      }
+
+      .progress-area {
+        margin-top: 9px;
+      }
+
+      .progress-label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .progress-track {
+        height: 8px;
+        overflow: hidden;
+        background: var(--primary-soft);
+        border-radius: 999px;
+      }
+
+      .progress-fill {
+        width: 0;
+        height: 100%;
+        background: linear-gradient(90deg, var(--primary) 0%, #39a4e6 100%);
+        border-radius: inherit;
+        transition: width 0.2s ease;
+      }
+
+      button {
+        border: none;
+        padding: 12px 18px;
+        border-radius: 10px;
+        cursor: pointer;
+        color: #fff;
+        font-weight: 700;
+        font-size: 0.96rem;
+        white-space: nowrap;
+        width: 100%;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+        box-shadow: 0 6px 14px rgba(11, 83, 148, 0.15);
+      }
+
+      button:hover {
+        opacity: 0.96;
+        transform: translateY(-1px);
+      }
+
+      .btn-process {
+        background: linear-gradient(180deg, var(--primary) 0%, var(--primary-dark) 100%);
+      }
+
+      .btn-calc {
+        background: linear-gradient(180deg, #1d9c62 0%, #117a4d 100%);
+      }
+
+      .btn-export {
+        background: linear-gradient(180deg, #f2a13d 0%, #dd7f1d 100%);
+      }
+
+      #status {
+        font-size: 15px;
+        line-height: 1.8;
+        padding: 8px 2px;
+      }
+
+      .table-wrap {
+        width: 100%;
+        overflow-x: auto;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0;
+        table-layout: fixed;
+        min-width: 980px;
+        background: #fff;
+      }
+
+      th {
+        background: linear-gradient(180deg, var(--primary) 0%, var(--primary-dark) 100%);
+        color: white;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+
+      th,
+      td {
+        border: 1px solid var(--border);
+        padding: 10px 8px;
+        text-align: center;
+        vertical-align: middle;
+      }
+
+      tbody tr:nth-child(even) {
+        background: #f9fbff;
+      }
+
+      tbody tr:hover {
+        background: #eef7ff;
+      }
+
+      .summary {
+        margin-top: 18px;
+        padding: 16px 18px;
+        background: var(--success-soft);
+        border-left: 6px solid var(--success);
+        border-radius: 10px;
+        font-size: 1.02rem;
+        font-weight: bold;
+        color: #174a36;
+      }
+
+      .success {
+        color: var(--success);
+        font-weight: 700;
+      }
+
+      .warning {
+        color: var(--warning);
+      }
+
+      .error {
+        color: var(--danger);
+        font-weight: 700;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      @media (max-width: 700px) {
+        body {
+          padding: 16px;
+        }
+
+        .toolbar {
+          grid-template-columns: 1fr;
+        }
+
+        .file-picker {
+          width: 100%;
+        }
+
+        input[type="file"],
+        button {
+          width: 100%;
+          max-width: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <h1>Add'l Rebar Weight Calculator</h1>
+
+        <div class="toolbar">
+          <div class="file-picker">
+            <input type="file" id="pdfUpload" accept=".pdf" />
+            <div class="progress-area hidden" id="progressArea">
+              <div class="progress-label">
+                <span id="progressText">Processing PDF...</span>
+                <span id="progressPercent">0%</span>
+              </div>
+              <div
+                class="progress-track"
+                id="progressTrack"
+                role="progressbar"
+                aria-label="PDF processing progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+              >
+                <div class="progress-fill" id="progressFill"></div>
+              </div>
+            </div>
+          </div>
+          <button class="btn-process" onclick="processPDF()">Process PDF</button>
+          <button class="btn-calc" onclick="calculateWeight()">Calculate Weight</button>
+          <button class="btn-export" onclick="exportCSV()">Export CSV</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Processing Status</h3>
+        <div id="status">Waiting for PDF...</div>
+      </div>
+
+      <div class="card">
+        <h3>Detected Add'l Bars</h3>
+
+        <div class="table-wrap">
+          <table id="resultTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Callout</th>
+                <th>Qty</th>
+                <th>Bar Size</th>
+                <th>Length (ft)</th>
+                <th>Total LF</th>
+                <th>Wt/LF</th>
+                <th>Total Weight (lbs)</th>
+                <th>Tons</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="summary" id="summary">No Calculation Yet</div>
+      </div>
+    </div>
+
+    <textarea id="rawText" class="hidden"></textarea>
+
+    <script>
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+      const rebarWeights = {
+        "#3": 0.376,
+        "#4": 0.668,
+        "#5": 1.043,
+        "#6": 1.502,
+        "#7": 2.044,
+        "#8": 2.67,
+        "#9": 3.4,
+        "#10": 4.303,
+        "#11": 5.313,
+        "#14": 7.65,
+        "#18": 13.6,
+      };
+
+      function updateProgress(percent, label) {
+        const progressArea = document.getElementById("progressArea");
+        const progressTrack = document.getElementById("progressTrack");
+        const progressFill = document.getElementById("progressFill");
+        const roundedPercent = Math.round(percent);
+
+        progressArea.classList.remove("hidden");
+        progressFill.style.width = `${roundedPercent}%`;
+        progressTrack.setAttribute("aria-valuenow", roundedPercent);
+        document.getElementById("progressText").textContent = label;
+        document.getElementById("progressPercent").textContent = `${roundedPercent}%`;
+      }
+
+      async function processPDF() {
+        let file = document.getElementById("pdfUpload").files[0];
+
+        if (!file) {
+          alert("Please select a PDF file.");
+          return;
+        }
+
+        document.getElementById("status").innerHTML = "⏳ Processing PDF... Please wait.";
+        updateProgress(0, "Loading PDF...");
+
+        try {
+          let arrayBuffer = await file.arrayBuffer();
+          let pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          let fullText = "";
+
+          for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+            let page = await pdf.getPage(pageNo);
+            let textContent = await page.getTextContent();
+            let pageText = textContent.items.map((item) => item.str).join(" ");
+            fullText += pageText + " ";
+            updateProgress(
+              (pageNo / pdf.numPages) * 100,
+              `Reading page ${pageNo} of ${pdf.numPages}`,
+            );
+          }
+
+          updateProgress(100, "PDF processing complete");
+          document.getElementById("rawText").value = fullText;
+
+          let matches = fullText.match(/\((\d+)\)\s*#(\d+)\s*x\s*([\d\.]+)/gi);
+          let count = matches ? matches.length : 0;
+
+          document.getElementById("status").innerHTML = `
+            <div class='success'>
+              ✅ PDF Processed Successfully<br>
+              ✅ Pages Read : ${pdf.numPages}<br>
+              ✅ Callouts Found : ${count}<br>
+              ✅ Ready For Calculation
+            </div>
+          `;
+        } catch (error) {
+          console.error(error);
+          document.getElementById("status").innerHTML = `
+            <div class='error'>❌ Error Reading PDF</div>
+          `;
+        }
+      }
+
+      function calculateWeight() {
+        let text = document.getElementById("rawText").value;
+
+        if (text.trim() === "") {
+          alert("Please process PDF first.");
+          return;
+        }
+
+        const tbody = document.querySelector("#resultTable tbody");
+        tbody.innerHTML = "";
+
+        let regex = /\((\d+)\)\s*#(\d+)\s*x\s*([\d\.]+)/gi;
+        let match;
+        let row = 1;
+        let grandLF = 0;
+        let grandWeight = 0;
+
+        while ((match = regex.exec(text)) !== null) {
+          let qty = parseInt(match[1]);
+          let bar = "#" + match[2];
+          let length = parseFloat(match[3]);
+
+          if (isNaN(length)) length = 0;
+
+          let totalLF = qty * length;
+          let wtLF = rebarWeights[bar] || 0;
+          let totalWeight = totalLF * wtLF;
+          let tons = totalWeight / 2000;
+
+          grandLF += totalLF;
+          grandWeight += totalWeight;
+
+          let tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${row}</td>
+            <td>${match[0]}</td>
+            <td>${qty}</td>
+            <td>${bar}</td>
+            <td>${length.toFixed(2)}</td>
+            <td>${totalLF.toFixed(2)}</td>
+            <td>${wtLF.toFixed(3)}</td>
+            <td>${totalWeight.toFixed(2)}</td>
+            <td>${tons.toFixed(3)}</td>
+          `;
+          tbody.appendChild(tr);
+          row++;
+        }
+
+        document.getElementById("summary").innerHTML = `
+          ✅ GRAND TOTAL LF : ${grandLF.toFixed(2)} ft <br><br>
+          ✅ GRAND TOTAL WEIGHT : ${grandWeight.toFixed(2)} lbs <br><br>
+          ✅ GRAND TOTAL TONS : ${(grandWeight / 2000).toFixed(3)}
+        `;
+      }
+
+      function exportCSV() {
+        let rows = document.querySelectorAll("table tr");
+        let csv = [];
+
+        rows.forEach((row) => {
+          let cols = row.querySelectorAll("th,td");
+          let data = [];
+
+          cols.forEach((col) => {
+            data.push('"' + col.innerText + '"');
+          });
+
+          csv.push(data.join(","));
+        });
+
+        let blob = new Blob([csv.join("\n")], { type: "text/csv" });
+        let link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "Addl_Bar_Takeoff.csv";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    </script>
+  </body>
+</html>

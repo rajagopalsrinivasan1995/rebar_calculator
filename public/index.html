@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rebar Calculator Portal</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: #172b3a;
+      background: #eef3f7;
+      --navy: #153b5b;
+      --blue: #246b9b;
+      --line: #d8e3eb;
+      --muted: #627687;
+      --danger: #b93c48;
+      --green: #147650;
+    }
+
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; }
+    button, input, select { font: inherit; }
+    button {
+      min-height: 42px;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 9px;
+      color: #fff;
+      background: var(--blue);
+      cursor: pointer;
+      font-weight: 700;
+    }
+    button:hover { filter: brightness(1.06); }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 3px solid rgba(36, 107, 155, 0.25);
+      outline-offset: 2px;
+    }
+    button.secondary { color: var(--navy); background: #eaf0f4; }
+    button.danger { background: var(--danger); }
+    input, select {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    label { display: block; margin-bottom: 7px; font-weight: 650; }
+    .page { display: none; }
+    .page.visible { display: block; }
+    #authPage {
+      max-width: 480px;
+      margin: 8vh auto;
+      padding: 30px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 20px 60px rgba(28, 55, 75, 0.12);
+    }
+    #authPage h1 { margin: 0 0 8px; color: var(--navy); font-size: 25px; }
+    #authPage .intro { margin: 0 0 24px; color: var(--muted); }
+    .field { margin: 16px 0; }
+    .hint { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .status { min-height: 22px; margin-top: 12px; color: var(--danger); font-size: 14px; }
+    #portalPage { min-height: 100vh; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px clamp(16px, 4vw, 44px);
+      color: #fff;
+      background: linear-gradient(120deg, #153b5b, #246b9b);
+    }
+    .brand h1 { margin: 0; font-size: 20px; }
+    .brand p { margin: 4px 0 0; color: rgba(255,255,255,.78); font-size: 13px; }
+    .user-actions { display: flex; align-items: center; gap: 12px; }
+    #signedInAs { color: #fff; font-size: 14px; }
+    .topbar button { color: var(--navy); background: #fff; }
+    .workspace { padding: 18px clamp(12px, 3vw, 32px) 30px; }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .toolbar button.selected { background: var(--navy); }
+    .toolbar .spacer { flex: 1; }
+    #calculatorFrame:not([hidden]) {
+      display: block;
+      width: 100%;
+      height: calc(100vh - 170px);
+      min-height: 600px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #eef3f7;
+    }
+    #welcome {
+      padding: 44px 20px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--muted);
+      background: #fff;
+      text-align: center;
+    }
+    #adminPanel:not([hidden]) {
+      margin-top: 18px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+    #adminPanel h2 { margin: 0 0 16px; color: var(--navy); font-size: 20px; }
+    #adminPanel h3 { margin: 22px 0 10px; color: var(--navy); font-size: 16px; }
+    .account-form {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+      align-items: end;
+      gap: 12px;
+    }
+    .account-form .field { margin: 0; }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 600px; }
+    th, td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; }
+    th { color: var(--navy); background: #f3f7fa; }
+    .success { color: var(--green); font-weight: 700; }
+    .failure { color: var(--danger); font-weight: 700; }
+    .admin-status { min-height: 20px; margin-top: 8px; color: var(--danger); font-size: 14px; }
+    @media (max-width: 800px) {
+      .topbar { align-items: flex-start; }
+      .user-actions { align-items: flex-end; flex-direction: column; }
+      .account-form { grid-template-columns: 1fr 1fr; }
+      #calculatorFrame { height: calc(100vh - 210px); min-height: 520px; }
+    }
+    @media (max-width: 520px) {
+      #authPage { margin: 4vh 12px; padding: 24px 20px; }
+      .topbar { flex-direction: column; }
+      .user-actions { align-items: flex-start; flex-direction: row; }
+      .account-form { grid-template-columns: 1fr; }
+      #calculatorFrame { min-height: 500px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="authPage" class="page">
+    <h1 id="authTitle">Rebar Calculator Portal</h1>
+    <p id="authIntro" class="intro">Sign in to use the calculators.</p>
+
+    <form id="setupForm" hidden>
+      <p class="hint">First-time setup: enter the one-time token shown in the server window. Create the administrator account and choose its password here. The starter username is rajagopal.</p>
+      <div class="field">
+        <label for="setupToken">One-time setup token</label>
+        <input id="setupToken" autocomplete="off" required>
+      </div>
+      <div class="field">
+        <label for="setupUsername">Administrator username</label>
+        <input id="setupUsername" value="rajagopal" minlength="3" maxlength="40" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="setupPassword">Administrator password</label>
+        <input id="setupPassword" type="password" minlength="4" maxlength="256" autocomplete="new-password" required>
+        <small class="hint">Use at least 4 characters. This password is set privately and is not included in the project files.</small>
+      </div>
+      <button type="submit">Create administrator</button>
+    </form>
+
+    <form id="loginForm">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit">Sign in</button>
+    </form>
+    <div id="authStatus" class="status" role="status" aria-live="polite"></div>
+  </main>
+
+  <main id="portalPage" class="page">
+    <header class="topbar">
+      <div class="brand">
+        <h1>Rebar Calculator Portal</h1>
+        <p>Choose a calculator from one place.</p>
+      </div>
+      <div class="user-actions">
+        <span id="signedInAs"></span>
+        <button id="logoutButton" type="button">Sign out</button>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <nav class="toolbar" aria-label="Calculator navigation">
+        <button type="button" data-calculator="standee">Standee Calculator</button>
+        <button type="button" data-calculator="additional-bars">Add'l Bar Calculator</button>
+        <span class="spacer"></span>
+        <button type="button" id="adminToggle" class="secondary" hidden>Manage users &amp; logins</button>
+      </nav>
+      <section id="adminPanel" hidden>
+        <h2>Manage user accounts</h2>
+        <form id="createUserForm" class="account-form">
+          <div class="field">
+            <label for="newUsername">Username</label>
+            <input id="newUsername" minlength="3" maxlength="40" required>
+          </div>
+          <div class="field">
+            <label for="newPassword">Temporary password</label>
+            <input id="newPassword" type="password" minlength="4" maxlength="256" required>
+          </div>
+          <div class="field">
+            <label for="newRole">Role</label>
+            <select id="newRole">
+              <option value="user">User</option>
+              <option value="admin">Administrator</option>
+            </select>
+          </div>
+          <div class="field">
+            <small class="hint">Passwords require at least 4 characters.</small>
+          </div>
+          <button type="submit">Create account</button>
+        </form>
+        <div id="adminStatus" class="admin-status" role="status" aria-live="polite"></div>
+
+        <h3>Accounts</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th>Action</th></tr></thead>
+            <tbody id="usersBody"></tbody>
+          </table>
+        </div>
+
+        <h3>Recent login activity</h3>
+        <p class="hint">Shows the latest 200 successful and failed login attempts.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Username</th><th>Result</th><th>Time</th></tr></thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+      </section>
+      <div id="welcome">Select a calculator above to get started.</div>
+      <iframe id="calculatorFrame" title="Selected rebar calculator" hidden></iframe>
+    </section>
+  </main>
+
+  <script>
+    const authPage = document.getElementById("authPage");
+    const portalPage = document.getElementById("portalPage");
+    const authStatus = document.getElementById("authStatus");
+    const adminStatus = document.getElementById("adminStatus");
+    const setupForm = document.getElementById("setupForm");
+    const loginForm = document.getElementById("loginForm");
+    const adminPanel = document.getElementById("adminPanel");
+    const calculatorFrame = document.getElementById("calculatorFrame");
+    const welcome = document.getElementById("welcome");
+
+    async function api(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: "same-origin",
+        ...options,
+        headers: {
+          ...(options.body ? { "Content-Type": "application/json" } : {}),
+          ...options.headers,
+        },
+      });
+      if (response.status === 204) return null;
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The request could not be completed.");
+      return result;
+    }
+
+    function showAuth(message = "", setup = false) {
+      portalPage.classList.remove("visible");
+      authPage.classList.add("visible");
+      document.getElementById("authTitle").textContent = setup
+        ? "Set up the administrator"
+        : "Rebar Calculator Portal";
+      document.getElementById("authIntro").textContent = setup
+        ? "Create the first secure account to start using the calculators."
+        : "Sign in to use the calculators.";
+      authStatus.textContent = message;
+      setupForm.hidden = !setup;
+      loginForm.hidden = setup;
+      calculatorFrame.hidden = true;
+      calculatorFrame.removeAttribute("src");
+    }
+
+    function showPortal(user) {
+      authPage.classList.remove("visible");
+      portalPage.classList.add("visible");
+      welcome.hidden = false;
+      calculatorFrame.hidden = true;
+      calculatorFrame.removeAttribute("src");
+      document.getElementById("signedInAs").textContent = `Signed in as ${user.username}`;
+      const adminToggle = document.getElementById("adminToggle");
+      adminToggle.hidden = !user.isAdmin;
+      adminPanel.hidden = true;
+      document.querySelectorAll("[data-calculator]").forEach((button) => {
+        button.classList.remove("selected");
+      });
+      if (user.isAdmin) loadAdminData();
+    }
+
+    async function initialize() {
+      try {
+        const session = await api("/api/session");
+        if (session.user) {
+          showPortal(session.user);
+        } else if (session.setupRequired) {
+          showAuth("", true);
+        } else {
+          showAuth();
+        }
+      } catch (error) {
+        showAuth(`Cannot connect to the portal server: ${error.message}`);
+      }
+    }
+
+    setupForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      authStatus.textContent = "";
+      try {
+        const result = await api("/api/setup", {
+          method: "POST",
+          body: JSON.stringify({
+            token: document.getElementById("setupToken").value,
+            username: document.getElementById("setupUsername").value.trim(),
+            password: document.getElementById("setupPassword").value,
+          }),
+        });
+        setupForm.reset();
+        showPortal(result.user);
+      } catch (error) {
+        authStatus.textContent = error.message;
+      }
+    });
+
+    loginForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      authStatus.textContent = "";
+      try {
+        const result = await api("/api/login", {
+          method: "POST",
+          body: JSON.stringify({
+            username: document.getElementById("username").value.trim(),
+            password: document.getElementById("password").value,
+          }),
+        });
+        loginForm.reset();
+        showPortal(result.user);
+      } catch (error) {
+        authStatus.textContent = error.message;
+      }
+    });
+
+    document.querySelectorAll("[data-calculator]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const name = button.dataset.calculator;
+        calculatorFrame.src = `/calculators/${name}`;
+        calculatorFrame.hidden = false;
+        welcome.hidden = true;
+        adminPanel.hidden = true;
+        document.querySelectorAll("[data-calculator]").forEach((item) => {
+          item.classList.toggle("selected", item === button);
+        });
+      });
+    });
+
+    document.getElementById("logoutButton").addEventListener("click", async () => {
+      try {
+        await api("/api/logout", { method: "POST" });
+        adminPanel.hidden = true;
+        welcome.hidden = false;
+        showAuth();
+      } catch (error) {
+        adminStatus.textContent = `Sign out failed: ${error.message}`;
+      }
+    });
+
+    document.getElementById("adminToggle").addEventListener("click", async () => {
+      const opening = adminPanel.hidden;
+      adminPanel.hidden = !opening;
+      if (opening) {
+        calculatorFrame.hidden = true;
+        welcome.hidden = true;
+        await loadAdminData();
+      } else {
+        welcome.hidden = false;
+      }
+    });
+
+    async function loadAdminData() {
+      try {
+        const [usersResult, historyResult] = await Promise.all([
+          api("/api/admin/users"),
+          api("/api/admin/login-history"),
+        ]);
+        renderUsers(usersResult.users);
+        renderHistory(historyResult.events);
+      } catch (error) {
+        adminStatus.textContent = error.message;
+      }
+    }
+
+    function renderUsers(users) {
+      const body = document.getElementById("usersBody");
+      body.replaceChildren();
+      for (const user of users) {
+        const row = document.createElement("tr");
+        const username = document.createElement("td");
+        username.textContent = user.username;
+        const role = document.createElement("td");
+        role.textContent = user.isAdmin ? "Administrator" : "User";
+        const status = document.createElement("td");
+        status.textContent = user.active ? "Active" : "Disabled";
+        const created = document.createElement("td");
+        created.textContent = new Date(user.createdAt).toLocaleString();
+        const action = document.createElement("td");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = user.active ? "secondary" : "";
+        button.textContent = user.active ? "Disable" : "Enable";
+        button.addEventListener("click", async () => {
+          adminStatus.textContent = "";
+          try {
+            await api(`/api/admin/users/${user.id}/active`, {
+              method: "PATCH",
+              body: JSON.stringify({ active: !user.active }),
+            });
+            await loadAdminData();
+          } catch (error) {
+            adminStatus.textContent = error.message;
+          }
+        });
+        action.append(button);
+        row.append(username, role, status, created, action);
+        body.append(row);
+      }
+    }
+
+    function renderHistory(events) {
+      const body = document.getElementById("historyBody");
+      body.replaceChildren();
+      for (const item of events) {
+        const row = document.createElement("tr");
+        const username = document.createElement("td");
+        username.textContent = item.username;
+        const result = document.createElement("td");
+        result.textContent = item.succeeded ? "Successful" : "Failed";
+        result.className = item.succeeded ? "success" : "failure";
+        const time = document.createElement("td");
+        time.textContent = new Date(item.occurredAt).toLocaleString();
+        row.append(username, result, time);
+        body.append(row);
+      }
+    }
+
+    document.getElementById("createUserForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      adminStatus.textContent = "";
+      const role = document.getElementById("newRole").value;
+      try {
+        await api("/api/admin/users", {
+          method: "POST",
+          body: JSON.stringify({
+            username: document.getElementById("newUsername").value.trim(),
+            password: document.getElementById("newPassword").value,
+            isAdmin: role === "admin",
+          }),
+        });
+        event.target.reset();
+        adminStatus.className = "admin-status success";
+        adminStatus.textContent = "Account created.";
+        await loadAdminData();
+      } catch (error) {
+        adminStatus.className = "admin-status";
+        adminStatus.textContent = error.message;
+      }
+    });
+
+    initialize();
+  </script>
+</body>
+</html>
