@@ -3,7 +3,6 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      HOST: 0.0.0.0
       PORT: 3000
       NODE_ENV: production
       COOKIE_SECURE: "true"

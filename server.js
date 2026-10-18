@@ -11,8 +11,7 @@ const {
 } = require("./security");
 
 const app = express();
-const port = Number(process.env.PORT || 3000);
-const host = process.env.HOST || "127.0.0.1";
+const PORT = Number(process.env.PORT || 10000);
 const sessionCookie = "calculator_portal_session";
 const sessionLifetimeMs = 8 * 60 * 60 * 1000;
 const secureCookies = process.env.COOKIE_SECURE === "true"
@@ -480,9 +479,9 @@ app.use((error, request, response, next) => {
   response.status(500).json({ error: "An unexpected server error occurred." });
 });
 
-const server = app.listen(port, host, () => {
-  console.info(`Calculator portal available at http://${host}:${server.address().port}`);
-  if (host !== "127.0.0.1" && host !== "localhost" && !secureCookies) {
+const server = app.listen(PORT, "0.0.0.0", () => {
+  console.info(`Server running on port ${PORT}`);
+  if (!secureCookies) {
     console.warn("Network binding is enabled without secure cookies. Use HTTPS before exposing this server.");
   }
 });

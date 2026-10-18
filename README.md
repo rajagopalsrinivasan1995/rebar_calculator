@@ -12,7 +12,7 @@ This project provides one portal page for the Standee Calculator and Add'l Bar C
    npm start
    ```
 
-3. The server prints a one-time setup token in the PowerShell window. Open `http://127.0.0.1:3000`, enter that token, keep the username `rajagopal` (or choose another), and set a private password with at least 4 characters.
+3. The server prints a one-time setup token in the PowerShell window. Open `http://127.0.0.1:10000`, enter that token, keep the username `rajagopal` (or choose another), and set a private password with at least 4 characters.
 4. After setup, sign in with that account. Use **Manage users & logins** to add or disable accounts and review the latest 200 successful and failed sign-in attempts.
 
 The setup token is not saved in the project. It is shown only while no account exists and is invalidated after the first administrator is created. Passwords are stored as salted scrypt hashes. Session tokens are random, stored only as hashes in SQLite, and sent in HttpOnly, SameSite cookies.
@@ -21,7 +21,7 @@ The setup token is not saved in the project. It is shown only while no account e
 
 `App_Data/portal.sqlite` contains user hashes, active sessions, and login history. Keep this file private and back it up securely. `App_Data` and `node_modules` are excluded by `.gitignore`.
 
-By default the server listens only on `127.0.0.1`, so it is available on the computer running it. Do not expose it to other devices over plain HTTP. The included Docker deployment puts Caddy in front of the app to provide HTTPS and keeps the SQLite database in a persistent Docker volume.
+By default the server listens on port `10000` on all network interfaces; set the `PORT` environment variable to use a different port. You can open it on the same computer at `http://127.0.0.1:10000`, but do not expose it to other devices over plain HTTP. The included Docker deployment runs the app on port `3000` behind Caddy, which provides HTTPS and keeps the SQLite database in a persistent Docker volume.
 
 The calculator pages are served through authenticated routes; their files are not exposed by the portal's static file handler. The PDF.js dependency in the Add'l Bar Calculator continues to load from its existing CDN URL and therefore requires internet access.
 
