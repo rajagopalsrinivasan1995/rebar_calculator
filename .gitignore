@@ -1,3 +1,4 @@
 node_modules/
 App_Data/
+.env
 npm-debug.log*
