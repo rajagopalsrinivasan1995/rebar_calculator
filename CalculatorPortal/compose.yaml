@@ -1,0 +1,43 @@
+services:
+  portal:
+    build: .
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      NODE_ENV: production
+      COOKIE_SECURE: "true"
+      TRUST_PROXY: "1"
+      DATABASE_PATH: /app/App_Data/portal.sqlite
+    volumes:
+      - portal-data:/app/App_Data
+    expose:
+      - "3000"
+    networks:
+      - portal-network
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN to the public domain name}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - portal
+    networks:
+      - portal-network
+
+networks:
+  portal-network:
+
+volumes:
+  portal-data:
+  caddy-data:
+  caddy-config:
