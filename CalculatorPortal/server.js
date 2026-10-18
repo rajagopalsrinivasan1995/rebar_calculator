@@ -1,8 +1,7 @@
 const crypto = require("node:crypto");
-const fs = require("node:fs");
 const path = require("node:path");
-const Database = require("better-sqlite3");
 const express = require("express");
+const { Pool } = require("pg");
 const {
   hashPassword,
   validatePassword,
@@ -11,70 +10,32 @@ const {
 } = require("./security");
 
 const app = express();
-const port = Number(process.env.PORT || 3000);
-const host = process.env.HOST || "127.0.0.1";
+const PORT = Number(process.env.PORT || 10000);
 const sessionCookie = "calculator_portal_session";
 const sessionLifetimeMs = 8 * 60 * 60 * 1000;
 const secureCookies = process.env.COOKIE_SECURE === "true"
   || process.env.NODE_ENV === "production";
-const trustProxy = process.env.TRUST_PROXY === "1" ? 1 : false;
-const dataDirectory = path.join(__dirname, "App_Data");
+const trustProxy = process.env.TRUST_PROXY === "1" || process.env.RENDER === "true"
+  ? 1
+  : false;
 const publicDirectory = path.join(__dirname, "public");
-const databasePath = process.env.DATABASE_PATH
-  ? path.resolve(process.env.DATABASE_PATH)
-  : path.join(dataDirectory, "portal.sqlite");
-
-fs.mkdirSync(path.dirname(databasePath), { recursive: true });
-const database = new Database(databasePath);
-database.pragma("journal_mode = WAL");
-database.pragma("foreign_keys = ON");
-database.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
-    password_hash TEXT NOT NULL,
-    is_admin INTEGER NOT NULL DEFAULT 0,
-    active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS sessions (
-    token_hash TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS login_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    username TEXT NOT NULL,
-    succeeded INTEGER NOT NULL,
-    occurred_at TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
-  CREATE INDEX IF NOT EXISTS login_events_time ON login_events(id DESC);
-`);
-database.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(Date.now());
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL must be set to the Supabase PostgreSQL connection string.");
+}
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.on("error", (error) => {
+  console.error("Unexpected PostgreSQL pool error:", error);
+});
 
 const statements = {
-  findUserByName: database.prepare("SELECT * FROM users WHERE username = ?"),
-  findUserById: database.prepare("SELECT * FROM users WHERE id = ?"),
-  userCount: database.prepare("SELECT COUNT(*) AS count FROM users"),
-  activeAdminCount: database.prepare(
-    "SELECT COUNT(*) AS count FROM users WHERE is_admin = 1 AND active = 1",
-  ),
-  addLoginEvent: database.prepare(`
-    INSERT INTO login_events (user_id, username, succeeded, occurred_at)
-    VALUES (?, ?, ?, ?)
-  `),
+  findUserByName: "SELECT * FROM users WHERE lower(username) = lower($1)",
+  findUserById: "SELECT * FROM users WHERE id = $1",
+  userCount: "SELECT COUNT(*) AS count FROM users",
+  activeAdminCount: `
+    SELECT COUNT(*) AS count FROM users WHERE is_admin = true AND active = true
+  `,
 };
-
-let bootstrapToken = statements.userCount.get().count === 0
-  ? crypto.randomBytes(32).toString("base64url")
-  : null;
-
-if (bootstrapToken) {
-  console.info("First-run admin setup token (enter this in the portal):");
-  console.info(bootstrapToken);
-}
+let bootstrapToken = null;
 
 const loginAttempts = new Map();
 const dummySalt = crypto.randomBytes(16);
@@ -147,16 +108,17 @@ function clearCookie(response) {
   });
 }
 
-function createSession(request, response, userId) {
+async function createSession(request, response, userId) {
   const existingToken = getCookie(request, sessionCookie);
   if (existingToken && existingToken.length <= 128) {
-    database.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(existingToken));
+    await pool.query("DELETE FROM sessions WHERE token_hash = $1", [hashToken(existingToken)]);
   }
   const token = crypto.randomBytes(32).toString("base64url");
-  const expiresAt = Date.now() + sessionLifetimeMs;
-  database.prepare(
-    "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-  ).run(hashToken(token), userId, expiresAt);
+  const expiresAt = new Date(Date.now() + sessionLifetimeMs);
+  await pool.query(
+    "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)",
+    [hashToken(token), userId, expiresAt],
+  );
 
   response.cookie(sessionCookie, token, {
     httpOnly: true,
@@ -167,28 +129,29 @@ function createSession(request, response, userId) {
   });
 }
 
-function resolveSession(request) {
+async function resolveSession(request) {
   const token = getCookie(request, sessionCookie);
   if (!token || token.length > 128) return null;
 
   const tokenHash = hashToken(token);
-  const session = database.prepare(`
+  const result = await pool.query(`
     SELECT users.*, sessions.expires_at
     FROM sessions
     JOIN users ON users.id = sessions.user_id
-    WHERE sessions.token_hash = ?
-  `).get(tokenHash);
+    WHERE sessions.token_hash = $1
+  `, [tokenHash]);
+  const session = result.rows[0];
 
   if (!session) return null;
-  if (session.expires_at <= Date.now() || !session.active) {
-    database.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+  if (session.expires_at.getTime() <= Date.now() || !session.active) {
+    await pool.query("DELETE FROM sessions WHERE token_hash = $1", [tokenHash]);
     return null;
   }
   return { tokenHash, user: session };
 }
 
-function requireAuth(request, response, next) {
-  const session = resolveSession(request);
+const requireAuth = asyncRoute(async (request, response, next) => {
+  const session = await resolveSession(request);
   if (!session) {
     clearCookie(response);
     response.status(401).json({ error: "Sign in to continue." });
@@ -197,7 +160,7 @@ function requireAuth(request, response, next) {
   request.portalUser = session.user;
   request.sessionTokenHash = session.tokenHash;
   next();
-}
+});
 
 function requireAdmin(request, response, next) {
   if (!request.portalUser || !request.portalUser.is_admin) {
@@ -217,13 +180,16 @@ function requireSameOrigin(request, response, next) {
   next();
 }
 
-function recordLogin(userId, username, succeeded) {
-  statements.addLoginEvent.run(
+async function recordLogin(userId, username, succeeded) {
+  await pool.query(`
+    INSERT INTO login_events (user_id, username, succeeded, occurred_at)
+    VALUES ($1, $2, $3, $4)
+  `, [
     userId || null,
     username,
-    succeeded ? 1 : 0,
-    new Date().toISOString(),
-  );
+    succeeded,
+    new Date(),
+  ]);
 }
 
 function loginIsBlocked(ipAddress) {
@@ -271,20 +237,22 @@ app.get("/calculators/additional-bars", requireAuth, (request, response) => {
   response.sendFile(path.join(publicDirectory, "calculators", "additional-bars.html"));
 });
 
-app.get("/api/session", (request, response) => {
-  const session = resolveSession(request);
+app.get("/api/session", asyncRoute(async (request, response) => {
+  const session = await resolveSession(request);
   if (session) {
     response.json({ setupRequired: false, user: publicUser(session.user) });
     return;
   }
+  const userCount = await pool.query(statements.userCount);
   response.json({
-    setupRequired: statements.userCount.get().count === 0,
+    setupRequired: Number(userCount.rows[0].count) === 0,
     user: null,
   });
-});
+}));
 
 app.post("/api/setup", requireSameOrigin, asyncRoute(async (request, response) => {
-  if (!bootstrapToken || statements.userCount.get().count !== 0) {
+  const userCount = await pool.query(statements.userCount);
+  if (!bootstrapToken || Number(userCount.rows[0].count) !== 0) {
     response.status(403).json({ error: "First-time setup is no longer available." });
     return;
   }
@@ -305,33 +273,37 @@ app.post("/api/setup", requireSameOrigin, asyncRoute(async (request, response) =
 
   const passwordHash = await hashPassword(password);
   let user;
+  const client = await pool.connect();
   try {
-    const createAdmin = database.transaction(() => {
-      if (statements.userCount.get().count !== 0) {
-        throw new Error("setup-already-complete");
-      }
-      const result = database.prepare(`
-        INSERT INTO users (username, password_hash, is_admin, active, created_at)
-        VALUES (?, ?, 1, 1, ?)
-      `).run(username, passwordHash, new Date().toISOString());
-      return statements.findUserById.get(result.lastInsertRowid);
-    });
-    user = createAdmin();
-  } catch (error) {
-    if (error.message === "setup-already-complete") {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(861734921)");
+    const count = await client.query(statements.userCount);
+    if (Number(count.rows[0].count) !== 0) {
+      await client.query("ROLLBACK");
       response.status(403).json({ error: "First-time setup is no longer available." });
       return;
     }
-    if (error.code === "SQLITE_CONSTRAINT_UNIQUE") {
+    const result = await client.query(`
+      INSERT INTO users (username, password_hash, is_admin, active, created_at)
+      VALUES ($1, $2, true, true, $3)
+      RETURNING *
+    `, [username, passwordHash, new Date()]);
+    user = result.rows[0];
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    if (error.code === "23505") {
       response.status(409).json({ error: "That username is already in use." });
       return;
     }
     throw error;
+  } finally {
+    client.release();
   }
 
   bootstrapToken = null;
-  recordLogin(user.id, user.username, true);
-  createSession(request, response, user.id);
+  await recordLogin(user.id, user.username, true);
+  await createSession(request, response, user.id);
   response.status(201).json({ user: publicUser(user) });
 }));
 
@@ -346,49 +318,51 @@ app.post("/api/login", requireSameOrigin, asyncRoute(async (request, response) =
   const normalizedUsername = typeof username === "string"
     ? username.trim().slice(0, 40)
     : "";
-  const account = normalizedUsername
-    ? statements.findUserByName.get(normalizedUsername)
+  const accountResult = normalizedUsername
+    ? await pool.query(statements.findUserByName, [normalizedUsername])
     : null;
+  const account = accountResult && accountResult.rows[0];
   const passwordHash = account ? account.password_hash : dummyPasswordHash;
   const passwordMatches = typeof password === "string"
     && await verifyPassword(password, passwordHash);
 
   if (!account || !account.active || !passwordMatches) {
-    recordLogin(account && account.active ? account.id : null, normalizedUsername || "(empty)", false);
+    await recordLogin(account && account.active ? account.id : null, normalizedUsername || "(empty)", false);
     recordFailedAttempt(ipAddress);
     response.status(401).json({ error: "Username or password is incorrect." });
     return;
   }
 
   clearFailedAttempts(ipAddress);
-  recordLogin(account.id, account.username, true);
-  createSession(request, response, account.id);
+  await recordLogin(account.id, account.username, true);
+  await createSession(request, response, account.id);
   response.json({ user: publicUser(account) });
 }));
 
-app.post("/api/logout", requireSameOrigin, (request, response) => {
+app.post("/api/logout", requireSameOrigin, asyncRoute(async (request, response) => {
   const token = getCookie(request, sessionCookie);
   if (token && token.length <= 128) {
-    database.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
+    await pool.query("DELETE FROM sessions WHERE token_hash = $1", [hashToken(token)]);
   }
   clearCookie(response);
   response.status(204).end();
-});
+}));
 
-app.get("/api/admin/users", requireAuth, requireAdmin, (request, response) => {
-  const users = database.prepare(`
+app.get("/api/admin/users", requireAuth, requireAdmin, asyncRoute(async (request, response) => {
+  const result = await pool.query(`
     SELECT id, username, is_admin, active, created_at
     FROM users
-    ORDER BY username COLLATE NOCASE
-  `).all().map((user) => ({
+    ORDER BY lower(username)
+  `);
+  const users = result.rows.map((user) => ({
     id: user.id,
     username: user.username,
-    isAdmin: Boolean(user.is_admin),
-    active: Boolean(user.active),
+    isAdmin: user.is_admin,
+    active: user.active,
     createdAt: user.created_at,
   }));
   response.json({ users });
-});
+}));
 
 app.post("/api/admin/users", requireSameOrigin, requireAuth, requireAdmin, asyncRoute(async (request, response) => {
   const { username, password, isAdmin } = request.body || {};
@@ -402,14 +376,15 @@ app.post("/api/admin/users", requireSameOrigin, requireAuth, requireAdmin, async
 
   const passwordHash = await hashPassword(password);
   try {
-    const result = database.prepare(`
+    const result = await pool.query(`
       INSERT INTO users (username, password_hash, is_admin, active, created_at)
-      VALUES (?, ?, ?, 1, ?)
-    `).run(username, passwordHash, isAdmin ? 1 : 0, new Date().toISOString());
-    const user = statements.findUserById.get(result.lastInsertRowid);
+      VALUES ($1, $2, $3, true, $4)
+      RETURNING *
+    `, [username, passwordHash, isAdmin, new Date()]);
+    const user = result.rows[0];
     response.status(201).json({ user: publicUser(user) });
   } catch (error) {
-    if (error.code === "SQLITE_CONSTRAINT_UNIQUE") {
+    if (error.code === "23505") {
       response.status(409).json({ error: "That username is already in use." });
       return;
     }
@@ -417,7 +392,7 @@ app.post("/api/admin/users", requireSameOrigin, requireAuth, requireAdmin, async
   }
 }));
 
-app.patch("/api/admin/users/:id/active", requireSameOrigin, requireAuth, requireAdmin, (request, response) => {
+app.patch("/api/admin/users/:id/active", requireSameOrigin, requireAuth, requireAdmin, asyncRoute(async (request, response) => {
   const userId = Number(request.params.id);
   const { active } = request.body || {};
   if (!Number.isSafeInteger(userId) || typeof active !== "boolean") {
@@ -425,7 +400,8 @@ app.patch("/api/admin/users/:id/active", requireSameOrigin, requireAuth, require
     return;
   }
 
-  const target = statements.findUserById.get(userId);
+  const targetResult = await pool.query(statements.findUserById, [userId]);
+  const target = targetResult.rows[0];
   if (!target) {
     response.status(404).json({ error: "Account not found." });
     return;
@@ -434,34 +410,46 @@ app.patch("/api/admin/users/:id/active", requireSameOrigin, requireAuth, require
     response.status(400).json({ error: "You cannot deactivate your own account." });
     return;
   }
-  if (!active && target.is_admin && statements.activeAdminCount.get().count <= 1) {
-    response.status(400).json({ error: "The last active administrator cannot be deactivated." });
-    return;
-  }
-
-  const update = database.transaction(() => {
-    database.prepare("UPDATE users SET active = ? WHERE id = ?").run(active ? 1 : 0, userId);
-    if (!active) {
-      database.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(861734921)");
+    if (!active && target.is_admin) {
+      const adminCount = await client.query(statements.activeAdminCount);
+      if (Number(adminCount.rows[0].count) <= 1) {
+        await client.query("ROLLBACK");
+        response.status(400).json({ error: "The last active administrator cannot be deactivated." });
+        return;
+      }
     }
-  });
-  update();
+    await client.query("UPDATE users SET active = $1 WHERE id = $2", [active, userId]);
+    if (!active) {
+      await client.query("DELETE FROM sessions WHERE user_id = $1", [userId]);
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
   response.json({ active });
-});
+}));
 
-app.get("/api/admin/login-history", requireAuth, requireAdmin, (request, response) => {
-  const events = database.prepare(`
+app.get("/api/admin/login-history", requireAuth, requireAdmin, asyncRoute(async (request, response) => {
+  const result = await pool.query(`
     SELECT username, succeeded, occurred_at
     FROM login_events
     ORDER BY id DESC
     LIMIT 200
-  `).all().map((event) => ({
+  `);
+  const events = result.rows.map((event) => ({
     username: event.username,
-    succeeded: Boolean(event.succeeded),
+    succeeded: event.succeeded,
     occurredAt: event.occurred_at,
   }));
   response.json({ events });
-});
+}));
 
 app.use((request, response) => {
   response.status(404).json({ error: "Not found." });
@@ -480,17 +468,44 @@ app.use((error, request, response, next) => {
   response.status(500).json({ error: "An unexpected server error occurred." });
 });
 
-const server = app.listen(port, host, () => {
-  console.info(`Calculator portal available at http://${host}:${server.address().port}`);
-  if (host !== "127.0.0.1" && host !== "localhost" && !secureCookies) {
-    console.warn("Network binding is enabled without secure cookies. Use HTTPS before exposing this server.");
+let server;
+
+async function start() {
+  await pool.query("DELETE FROM sessions WHERE expires_at <= NOW()");
+  const result = await pool.query(statements.userCount);
+  if (Number(result.rows[0].count) === 0) {
+    bootstrapToken = crypto.randomBytes(32).toString("base64url");
+    console.info("First-run admin setup token (enter this in the portal):");
+    console.info(bootstrapToken);
   }
+  server = app.listen(PORT, "0.0.0.0", () => {
+    console.info(`Server running on port ${PORT}`);
+    if (!secureCookies) {
+      console.warn("Network binding is enabled without secure cookies. Use HTTPS before exposing this server.");
+    }
+  });
+}
+
+start().catch((error) => {
+  console.error("Failed to initialize Supabase PostgreSQL:", error);
+  pool.end().finally(() => {
+    process.exitCode = 1;
+  });
 });
 
 function shutdown() {
+  if (!server) {
+    pool.end().catch((error) => {
+      console.error("Failed to close PostgreSQL pool:", error);
+      process.exitCode = 1;
+    });
+    return;
+  }
   server.close(() => {
-    database.close();
-    process.exit(0);
+    pool.end().then(() => process.exit(0)).catch((error) => {
+      console.error("Failed to close PostgreSQL pool:", error);
+      process.exitCode = 1;
+    });
   });
 }
 

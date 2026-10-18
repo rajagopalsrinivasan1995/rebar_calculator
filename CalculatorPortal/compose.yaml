@@ -3,14 +3,11 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      HOST: 0.0.0.0
       PORT: 3000
       NODE_ENV: production
       COOKIE_SECURE: "true"
       TRUST_PROXY: "1"
-      DATABASE_PATH: /app/App_Data/portal.sqlite
-    volumes:
-      - portal-data:/app/App_Data
+      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL to the Supabase PostgreSQL connection string}"
     expose:
       - "3000"
     networks:
@@ -38,6 +35,5 @@ networks:
   portal-network:
 
 volumes:
-  portal-data:
   caddy-data:
   caddy-config:
