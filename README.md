@@ -36,6 +36,8 @@ export DOMAIN=calculators.example.com
 docker compose up -d --build
 ```
 
+On Render, the server automatically trusts the single hosting proxy so HTTPS origin checks recognize the original request protocol. For other hosting providers that put one trusted reverse proxy in front of the app, set `TRUST_PROXY=1` in the service's environment variables and restart or redeploy the service.
+
 Check that the containers are running and read the first-run setup token:
 
 ```sh

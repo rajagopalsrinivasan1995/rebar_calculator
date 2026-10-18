@@ -16,7 +16,9 @@ const sessionCookie = "calculator_portal_session";
 const sessionLifetimeMs = 8 * 60 * 60 * 1000;
 const secureCookies = process.env.COOKIE_SECURE === "true"
   || process.env.NODE_ENV === "production";
-const trustProxy = process.env.TRUST_PROXY === "1" ? 1 : false;
+const trustProxy = process.env.TRUST_PROXY === "1" || process.env.RENDER === "true"
+  ? 1
+  : false;
 const dataDirectory = path.join(__dirname, "App_Data");
 const publicDirectory = path.join(__dirname, "public");
 const databasePath = process.env.DATABASE_PATH
