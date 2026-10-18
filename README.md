@@ -36,7 +36,16 @@ export DOMAIN=calculators.example.com
 docker compose up -d --build
 ```
 
-On Render, the server automatically trusts the single hosting proxy so HTTPS origin checks recognize the original request protocol. For other hosting providers that put one trusted reverse proxy in front of the app, set `TRUST_PROXY=1` in the service's environment variables and restart or redeploy the service.
+## Deploy on Render
+
+Render's local filesystem is not persistent across deploys. Before creating the first administrator, open the web service's **Settings** and add a persistent disk mounted at `/var/data`. In the service's **Environment** settings, set:
+
+- `DATABASE_PATH` to `/var/data/portal.sqlite`
+- `TRUST_PROXY` to `1`
+
+Save the changes and redeploy. Then open the latest deploy's logs, copy the one-time setup token printed by the server, and use it to create the administrator. Do not share the token. The database and administrator account will then persist on the mounted disk across restarts and deploys. Persistent disks may require a paid Render plan.
+
+For other hosting providers that put one trusted reverse proxy in front of the app, set `TRUST_PROXY=1` in the service's environment variables and restart or redeploy the service.
 
 Check that the containers are running and read the first-run setup token:
 
